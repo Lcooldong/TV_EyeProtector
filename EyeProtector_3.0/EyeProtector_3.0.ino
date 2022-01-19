@@ -1,15 +1,15 @@
 #include <IRremote.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+//#include <Adafruit_GFX.h>
+//#include <Adafruit_SSD1306.h>
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 //#include "PinDefinitionsAndMore.h"
-
-
+#include <U8g2lib.h>
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 #define DECODE_NEC 1  // 디코딩 방식
 #define timeSeconds 0.1 // 초
@@ -26,6 +26,8 @@ const int RGB[3] = {16, 17, 18};
 int colorState[3] = {0,};
 volatile int btnCount; // default : 0
 int btnFlag = 0;
+int menuFlag = 0;
+int menuCount = 0;
 int flag = 0;
 int state = LOW;
 
@@ -82,41 +84,44 @@ void setup() {
     // 버튼 누를 때  HIGH->LOW : FALLING, LOW->HIGH : RISING, 아무 때나 CHANGE
     attachInterrupt(digitalPinToInterrupt(BTN), buttonPressed, FALLING); 
 
-    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;);
-    }
+    u8g2.begin();
+    u8g2.enableUTF8Print();
     delay(2000);
-    display.clearDisplay();
 }
 
 
 void loop() {
+
     if (btnCount > 0){
       portENTER_CRITICAL(&synch);
       btnCount--;
       portEXIT_CRITICAL(&synch);
+      
       if(digitalRead(BTN)==LOW){
         if(btnFlag==0){
           btnFlag = 1;
+          delay(100);
           gLedState = !gLedState;
-          Serial.print("LED_STATE");
+          Serial.print("LED_STATE : ");
           Serial.println(gLedState);
-          display.setTextSize(1);
-          display.setTextColor(WHITE);
-          display.setCursor(0, 10);
-          // Display static text
-          display.println("첫번째");
-          display.display();  
+
+          u8g2.setFont(u8g2_font_unifont_t_korean2);
+          setMenuButton();
+          dataReceive();
         }
       }else{
         btnFlag = 0;
         Serial.println("NORMALLY OPEN");  
       }
     }
+}
 
-     // 디코딩 된 정보 받으면
-    if (IrReceiver.decode()) {
+
+void dataReceive(){
+  do{
+    menuFlag = 1;
+    do{
+      if (IrReceiver.decode()) {
         Serial.println();
         // Print a short summary of received data1바이트 형식
         IrReceiver.printIRResultShort(&Serial); // 받은 데이터 시리얼에 표시
@@ -126,53 +131,59 @@ void loop() {
             IrReceiver.printIRResultRawFormatted(&Serial, true);
         }
         //Serial.println();
+
         IrReceiver.resume(); // Enable receiving of the next value
         
         /*
          * Finally check the received data and perform actions according to the received commands
          */
-        storage[0] = &IrReceiver.decodedIRData.command;  // 포인터는 주소, 구조체command : uint16_t
-        Serial.print("storage[0] : 0x");
-        Serial.println(*storage[0], HEX);  // 역참조, 주소의 값
+        storage[menuCount] = &IrReceiver.decodedIRData.command;  // 포인터는 주소, 구조체command : uint16_t
+        Serial.print("storage[");
+        Serial.print(menuCount);
+        Serial.print("] : 0x");
+        Serial.println(*storage[menuCount], HEX);  // 역참조, 주소의 값
         //sendData();
         printRawData();
-        executeCommand();
+        //executeCommand();
+      }
+      timeInterval();
+    }while(IrReceiver.decodedIRData.protocol == UNKNOWN);
+
+    if (menuCount > 0){
+//      if(int(*storage[menuCount - 1]) != int(*storage[menuCount])){
+//        menuCount++;
+//        Serial.println("두번째부터");
+//        Serial.println(*storage[menuCount], HEX);
+//      } 
+    }else if(menuCount == 0){
+      menuCount++;
+      Serial.println(*storage[menuCount], HEX);
+ //     Serial.println(storage[menuCount].toInt());
+//      if(int(*storage[menuCount]) != 0) {
+//        menuCount++;
+//        Serial.println("첫번째");
+//        Serial.println(*storage[menuCount], HEX);
+//      }
     }
-    timeInterval();
-    delay(1);
+    
+    if(menuCount == SAVE_DATA_SIZE){
+      menuFlag = 0;
+    }
+  }while(menuFlag);
+  delay(500);
 }
 
-//void storeCode(IRData *aIRReceivedData) {
-//    if (aIRReceivedData->flags & IRDATA_FLAGS_IS_REPEAT) {
-//        Serial.println(F("Ignore repeat"));
-//        return;
-//    }
-//    if (aIRReceivedData->flags & IRDATA_FLAGS_IS_AUTO_REPEAT) {
-//        Serial.println(F("Ignore autorepeat"));
-//        return;
-//    }
-//    if (aIRReceivedData->flags & IRDATA_FLAGS_PARITY_FAILED) {
-//        Serial.println(F("Ignore parity error"));
-//        return;
-//    }
-//    /*
-//     * Copy decoded data
-//     */
-//    sStoredIRData.receivedIRData = *aIRReceivedData;
-//
-//    if (sStoredIRData.receivedIRData.protocol == UNKNOWN) {
-//        Serial.print(F("Received unknown code saving "));
-//        Serial.print(IrReceiver.results.rawlen - 1);
-//        Serial.println(F(" TickCounts as raw "));
-//        sStoredIRData.rawCodeLength = IrReceiver.results.rawlen - 1;
-//        IrReceiver.compensateAndStoreIRResultInArray(sStoredIRData.rawCode);
-//    } else {
-//        IrReceiver.printIRResultShort(&Serial);
-//        sStoredIRData.receivedIRData.flags = 0; // clear flags -esp. repeat- for later sending
-//        Serial.println();
-//    }
-//}
-
+void setMenuButton(){
+  u8g2.setFontDirection(0);
+  u8g2.clearBuffer();
+  u8g2.setCursor(20, 16);
+  u8g2.print("안녕하세요.");
+  u8g2.setCursor(20, 40);
+  u8g2.print("메뉴버튼을");
+  u8g2.setCursor(30, 56);
+  u8g2.print("누르세요");
+  u8g2.sendBuffer();
+}
 
 void executeCommand(){
   uint8_t myCommand = IrReceiver.decodedIRData.command;
