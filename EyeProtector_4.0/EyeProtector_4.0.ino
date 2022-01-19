@@ -1,6 +1,7 @@
 #include <IRremote.h>
 #include <SPI.h>
 #include <Wire.h>
+#include <EEPROM.h>
 //#include <Adafruit_GFX.h>
 //#include <Adafruit_SSD1306.h>
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -66,9 +67,10 @@ void IRAM_ATTR buttonPressed(){
 
 void setup() {
     Serial.begin(115200);
+    EEPROM.begin(32);
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
-
+    
     // 데이터 핀, 수신 확인용 LED<- 잘모르겠음
     IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK); // Start the receiver, enable feedback LED, take LED feedback pin from the internal boards definition
     IrSender.begin(IR_SEND_PIN, ENABLE_LED_FEEDBACK); // Specify send pin and enable feedback LED at default feedback LED pin
@@ -85,10 +87,15 @@ void setup() {
     digitalWrite(LED_PIN, LOW);
     // 버튼 누를 때  HIGH->LOW : FALLING, LOW->HIGH : RISING, 아무 때나 CHANGE
     attachInterrupt(digitalPinToInterrupt(BTN), buttonPressed, FALLING); 
-
+    
     u8g2.begin();
     u8g2.enableUTF8Print();
     delay(2000);
+    //readData(dataArray, SAVE_DATA_SIZE);
+    printArray(dataArray, SAVE_DATA_SIZE);
+    EEPROM.read(50);
+    Serial.print("EEPROM : ");
+    Serial.println(EEPROM.read(50));
 }
 
 
@@ -112,9 +119,11 @@ void loop() {
           dataReceive();
           btnFlag = 1;
           Serial.println("저장 완료");
+          EEPROM.write(50, 3);
           delay(1000);
           printArray(dataArray, SAVE_DATA_SIZE);
           endMonitor();
+          saveData(dataArray, SAVE_DATA_SIZE);
         }
       }else{
         if (btnFlag == 1){
@@ -177,8 +186,24 @@ void dataReceive(){
   }while(menuFlag);
 }
 
-void readData(){
-  
+void saveData(int ARRAY[] ,int SIZE){
+  for(int i = 0; i < SIZE; i++){
+    EEPROM.put(4i,ARRAY[i]);
+  } 
+  EEPROM.commit();
+}
+
+void readData(int ARRAY[] ,int SIZE){
+  for(int i = 0; i < SIZE; i++){
+    EEPROM.read(4i);
+  } 
+}
+
+void clearData(int ARRAY[]){
+  for(int i = 0; i < EEPROM.length(); i++){
+    EEPROM.write(i, 0);
+  } 
+  Serial.println("EEPROM Clear Done!");
 }
 
 void initialArray(int ARRAY[] ,int SIZE){
