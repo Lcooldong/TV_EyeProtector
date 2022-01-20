@@ -90,12 +90,10 @@ void setup() {
     
     u8g2.begin();
     u8g2.enableUTF8Print();
-    delay(2000);
+    delay(1000);
     //readData(dataArray, SAVE_DATA_SIZE);
     printArray(dataArray, SAVE_DATA_SIZE);
-    EEPROM.read(50);
-    Serial.print("EEPROM : ");
-    Serial.println(EEPROM.read(50));
+
 }
 
 
@@ -108,18 +106,17 @@ void loop() {
       if(digitalRead(BTN)==LOW){
         if(btnFlag==0){
           //gLedState = !gLedState;
+          clearData(dataArray);
           IrReceiver.resume();
           initialArray(dataArray, SAVE_DATA_SIZE);
           //printArray(dataArray, SAVE_DATA_SIZE);
           Serial.print("버튼 눌러짐");
           //Serial.println(gLedState);
-
           u8g2.setFont(u8g2_font_unifont_t_korean2);
           setMenuButton();
           dataReceive();
           btnFlag = 1;
           Serial.println("저장 완료");
-          EEPROM.write(50, 3);
           delay(1000);
           printArray(dataArray, SAVE_DATA_SIZE);
           endMonitor();
@@ -188,14 +185,17 @@ void dataReceive(){
 
 void saveData(int ARRAY[] ,int SIZE){
   for(int i = 0; i < SIZE; i++){
-    EEPROM.put(4i,ARRAY[i]);
+    EEPROM.writeInt(4*i,ARRAY[i]);
   } 
   EEPROM.commit();
+  Serial.println("intData write in EEPROM is Successful");
 }
 
 void readData(int ARRAY[] ,int SIZE){
+  int rInt = EEPROM.readInt();
+  //String rString = EEPROM.readString();
   for(int i = 0; i < SIZE; i++){
-    EEPROM.read(4i);
+    EEPROM.read(4*i);
   } 
 }
 
@@ -203,6 +203,7 @@ void clearData(int ARRAY[]){
   for(int i = 0; i < EEPROM.length(); i++){
     EEPROM.write(i, 0);
   } 
+  EEPROM.end();
   Serial.println("EEPROM Clear Done!");
 }
 
