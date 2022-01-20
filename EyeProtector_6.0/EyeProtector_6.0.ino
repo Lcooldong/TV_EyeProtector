@@ -46,7 +46,7 @@ int state = LOW;
 int tempData;
 int dataFlag = 0;
 int detectCount = 0;
-int initialCount = 0;
+int detectFlag = 0;
 
 unsigned long now = millis();
 unsigned long lastTrigger = 0;
@@ -116,28 +116,61 @@ void setup() {
 void loop() {
     buttonClicked();
     detectDistance();
-    //Serial.print("거리 : ");
-    //Serial.println(sonarDistance);
-    if (sonarDistance <= 10){
-      detectCount++;
-//      Serial.print("detectCount : ");
-//      Serial.println(detectCount);
-    }else{
-      initialCount++;
-//      Serial.print("initialCount : ");
-//      Serial.println(initialCount);
+
+    Serial.print("detectCount : ");
+    Serial.print(detectCount);
+    Serial.print(" detectFlag : ");
+    Serial.println(detectFlag);
+    if((detectCount >= 0) && (detectCount <= 1000)){
+      if(sonarDistance <= 10){
+        detectCount++;
+      }else{
+        detectCount--;
+      }
+    }
+
+    if (detectCount >= 1000){
+      detectCount = 1000;
+      detectFlag = 1;
+    }else if (detectCount <= 0){
+      detectCount = 0;
+      detectFlag = 0;
     }
     
-    if (detectCount > 1500){
+    
+    if ((detectFlag == 1)&&(detectCount >= 1000)){      // 밝기 감소
+      changeBright();
+      Serial.println("밝기 감소");
+      
+      
+    }else if((detectFlag == 1) && (detectCount <500)){  // 밝기 증가
+      changeBright();
+      Serial.println("밝기 증가");
+      detectFlag = 0;
+    }
+
+    timeInterval();   // 카운트하는 시간 때문에 늘어남
+}
+
+void changeBright(){
+  startTimer = true;
+    lastTrigger = millis();   // 신호가 들어온 시간
+    Serial.print("작동 시간 : ");
+    Serial.println(lastTrigger);
+    if(flag == 0){
+      flag = 1;           //flag = 1 일 때는 추가 신호 안받음
+      Serial.flush();
       Serial.println("move backWard");
-      sendData(0x45);   // timeInterval() 로 한번 실행 가능
-      detectCount = 0;
-    }
-    if (initialCount > 500){
-      detectCount = 0;
-      initialCount = 0;
-    }
-    timeInterval();
+      IrSender.sendNEC(sAddress, EEPROM.readInt(0), sRepeats);
+      delay(1000);
+      IrSender.sendNEC(sAddress, EEPROM.readInt(28), sRepeats);
+      delay(1000);
+      IrSender.sendNEC(sAddress, EEPROM.readInt(32), sRepeats);
+      delay(1000);
+      IrSender.sendNEC(sAddress, EEPROM.readInt(36), sRepeats);
+      delay(1000);
+      IrSender.sendNEC(sAddress, EEPROM.readInt(20), sRepeats);
+  }
 }
 
 
@@ -220,8 +253,11 @@ void dataReceive(){
       menuCount++;  // 메뉴
     } else if ((EEPROM.readInt(16) == dataArray[menuCount])&&(menuCount > 6)){
         if((dataArray[menuCount] == dataArray[menuCount-1])&&(tempData==0)){
-            pressEnterTwice();
+            //pressEnterTwice();
             Serial.println("확인버튼 다시 누름");
+            saveData(dataArray[menuCount], menuCount);
+            menuCount++;
+            
         }else if((dataArray[menuCount-1] == EEPROM.readInt(0))&&(tempData==0)){
             pressEnterTwice();
             Serial.println("잘못누름");
@@ -527,31 +563,33 @@ void executeCommand(){
   }
 }
 
-void sendData(int sCommand){
+void sendData(int Command){
     startTimer = true;
     lastTrigger = millis();
+    Serial.print("작동 시간 : ");
+    Serial.println(lastTrigger);
     sAddress = 0x0001;
-    sCommand = 0x45;
+    //sCommand = 0x45;
     sRepeats = 2;
     
-    Serial.println();
-    Serial.print(F("Send now: address=0x"));
-    Serial.print(sAddress, HEX);
-    Serial.print(F(" command=0x"));
-    Serial.print(sCommand, HEX);
-    Serial.print(F(" repeats="));
-    Serial.print(sRepeats);
-    Serial.println();
-
     //Serial.println(F("Send NEC with 16 bit address"));
     //Serial.flush();
 
     // Results for the first loop to: Protocol=NEC Address=0x102 Command=0x34 Raw-Data=0xCB340102 (32 bits)
-    IrSender.sendNEC(sAddress, sCommand, sRepeats);
-    if (flag = 0){
-      Serial.flush();
+    //IrSender.sendNEC(sAddress, sCommand, sRepeats);
+    if (flag == 0){  
       flag = 1;
-      IrSender.sendNEC(sAddress, sCommand, sRepeats);  
+    //Serial.println();
+      Serial.print(F("Send now: address=0x"));
+      Serial.print(sAddress, HEX);
+      Serial.print(F(" command=0x"));
+      Serial.print(Command, HEX);
+      Serial.print(F(" repeats="));
+      Serial.print(sRepeats);
+      Serial.println();
+      Serial.flush(); // 전송하고 있는 시리얼 데이터가 전송 완료될때까지 대기하는 함수, 큰 차이는 없음 
+      
+      IrSender.sendNEC(sAddress, Command, sRepeats);
     }
     /*
      * If you cannot avoid to send a raw value directly like e.g. 0xCB340102 you must use sendNECRaw()
@@ -564,15 +602,15 @@ void sendData(int sCommand){
 void timeInterval(){
     now = millis(); // 현재 시간은 계속 측정 중 -> 신호 때 받은 시간과 비교
     if(startTimer && (now - lastTrigger > (timeSeconds*1000))) {
-        Serial.print("현재 시간 : ");
+        Serial.print("초기화시간 : ");
         Serial.println(now);
         float interval = (float)(now-lastTrigger)/1000;
         snprintf(strTime, TIME_BUFFER_SIZE, "간격 : %.1f 초", interval);
         Serial.println(strTime);
-        flag = 0;   // flag -> 0일 때 작업 가능
+        flag = 0;   // flag -> 0일 때 작업가능
         startTimer = false;
         
-        Serial.println("Initializing");   // 작업간 간격을 줄 수 있음 
+        Serial.println("Initializing");   // 작업간 충돌 방지
     }
 }
 
