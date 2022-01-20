@@ -223,7 +223,7 @@ void timeInterval(){
         snprintf(strTime, TIME_BUFFER_SIZE, "간격 : %.1f 초", interval);
         Serial.println(strTime);
         flag = 0;
-        startTimer = false;
+        startTimer = false;   // 다른 작업 없을 때는 작동 안함
         Serial.println("Initializing");
     }
 }

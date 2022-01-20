@@ -14,25 +14,39 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 #define DECODE_NEC 1  // 디코딩 방식
 #define timeSeconds 0.1 // 초
-#define TIME_BUFFER_SIZE 30
-#define RAW_BUFFER_SIZE 11
-#define SAVE_DATA_SIZE 6
-#define DATA_BUFFER_SIZE 50
-#define BTN 13
+#define TIME_BUFFER_SIZE (30)
+#define RAW_BUFFER_SIZE  (11)
+#define SAVE_DATA_SIZE   (10)
+#define DATA_BUFFER_SIZE (50)
+#define BTN     13
 #define LED_PIN 27
+#define ECHO    12
+#define TRIG    14
 #define IR_RECEIVE_PIN 23
+
+enum{
+  RIGHT,
+  LEFT,
+  UP,
+  DOWN
+};
 
 //const int IR_RECEIVE_PIN = 23;  // 데이터 핀
 volatile boolean gLedState = LOW;
 const int RGB[3] = {16, 17, 18};
 int colorState[3] = {0,};
 volatile int btnCount; // default : 0
+float duration, distance;
+int sonarDistance = 0;
 int btnFlag = 0;
 int menuFlag = 0;
 int menuCount = 0;
 int flag = 0;
 int state = LOW;
+int tempData;
 int dataFlag = 0;
+int detectCount = 0;
+int initialCount = 0;
 
 unsigned long now = millis();
 unsigned long lastTrigger = 0;
@@ -85,6 +99,8 @@ void setup() {
       ledcWrite(i, 0);
     }
     pinMode(BTN, INPUT_PULLUP);
+    pinMode(ECHO, INPUT);
+    pinMode(TRIG, OUTPUT);
     digitalWrite(LED_PIN, LOW);
     // 버튼 누를 때  HIGH->LOW : FALLING, LOW->HIGH : RISING, 아무 때나 CHANGE
     attachInterrupt(digitalPinToInterrupt(BTN), buttonPressed, FALLING); 
@@ -98,7 +114,35 @@ void setup() {
 
 
 void loop() {
-    if (btnCount > 0){
+    buttonClicked();
+    detectDistance();
+    //Serial.print("거리 : ");
+    //Serial.println(sonarDistance);
+    if (sonarDistance <= 10){
+      detectCount++;
+//      Serial.print("detectCount : ");
+//      Serial.println(detectCount);
+    }else{
+      initialCount++;
+//      Serial.print("initialCount : ");
+//      Serial.println(initialCount);
+    }
+    
+    if (detectCount > 1500){
+      Serial.println("move backWard");
+      sendData(0x45);   // timeInterval() 로 한번 실행 가능
+      detectCount = 0;
+    }
+    if (initialCount > 500){
+      detectCount = 0;
+      initialCount = 0;
+    }
+    timeInterval();
+}
+
+
+void buttonClicked(){
+  if (btnCount > 0){
       portENTER_CRITICAL(&synch);
       btnCount--;
       portEXIT_CRITICAL(&synch);
@@ -116,12 +160,13 @@ void loop() {
           setMenuButton();
           dataReceive();
           btnFlag = 1;
-          saveData(dataArray, SAVE_DATA_SIZE);
+          
           Serial.println("저장 완료");
           delay(1000);
           //printArray(dataArray, SAVE_DATA_SIZE);
           readData(dataArray, SAVE_DATA_SIZE);
           endMonitor();
+          
         }
       }else{
         if (btnFlag == 1){
@@ -132,11 +177,10 @@ void loop() {
     }
 }
 
-
 void dataReceive(){
   do{
     menuFlag = 1;
-      if (IrReceiver.decode() && (dataFlag==0)) {
+    if (IrReceiver.decode() && (dataFlag==0)) {
       Serial.println();
       // Print a short summary of received data1바이트 형식
       IrReceiver.printIRResultShort(&Serial); // 받은 데이터 시리얼에 표시
@@ -147,6 +191,7 @@ void dataReceive(){
       }
       IrReceiver.resume(); // Enable receiving of the next value
       dataArray[menuCount] = IrReceiver.decodedIRData.command;
+      //saveData(dataArray[menuCount], menuCount);
       Serial.print("dataArray[");
       Serial.print(menuCount);
       Serial.print("] : 0x");
@@ -162,20 +207,59 @@ void dataReceive(){
     
     if(menuCount == 0){
       if(dataArray[menuCount] != 0) {
+        saveData(dataArray[menuCount], menuCount);
         menuCount++;
       }
-    }else if (menuCount > 0){
+    }else if ((menuCount > 0)&&(menuCount < 6)){
       if((dataArray[menuCount]!=0)&&(dataArray[menuCount] != dataArray[menuCount -1])){
+        saveData(dataArray[menuCount], menuCount);
         menuCount++;
+      }
+    } else if ((EEPROM.readInt(0) == dataArray[menuCount])&&(menuCount == 6)){
+      arrangeOrder();
+      menuCount++;  // 메뉴
+    } else if ((EEPROM.readInt(16) == dataArray[menuCount])&&(menuCount > 6)){
+        if(dataArray[menuCount] == dataArray[menuCount-1]){
+            Serial.println("확인버튼 다시 누름");
+        }else if(dataArray[menuCount-1] == EEPROM.readInt(0)){
+            Serial.println("잘못누름");  
+        }else{
+          saveData(tempData, menuCount);
+          //EEPROM.writeInt(4*menuCount, tempData);
+          //EEPROM.commit();
+          showComfirm();
+          menuCount++;  // 확인 버튼 누르면 끝
+          delay(1000);
+          dataArray[menuCount] = 0;
+        }
+    }
+    if (menuCount > 6){
+      if (dataArray[menuCount] == EEPROM.readInt(4)){
+        Serial.println("오른쪽");
+        showDirection(RIGHT);
+        tempData = EEPROM.readInt(4);
+      }else if(dataArray[menuCount] == EEPROM.readInt(8)){
+        Serial.println("왼쪽");
+        showDirection(LEFT);
+        tempData = EEPROM.readInt(8);
+      }else if(dataArray[menuCount] == EEPROM.readInt(12)){
+        Serial.println("아래");
+        showDirection(DOWN);
+        tempData = EEPROM.readInt(12);
+      }else if(dataArray[menuCount] == EEPROM.readInt(20)){
+        clearData(menuCount);
+        break;
       }
     }
+    
 
     switch(menuCount){
-      case 1: setRightButton();  break; 
-      case 2: setLeftButton(); break;
-      case 3: setDownButton(); break;
+      case 1: setRightButton(); break; 
+      case 2: setLeftButton();  break;
+      case 3: setDownButton();  break;
       case 4: setEnterButton(); break;
-      case 5: setExitButton(); break;
+      case 5: setExitButton();  break;
+      case 6: setOrder(); break;   // 메뉴
     }
     
     if(menuCount == SAVE_DATA_SIZE){
@@ -184,10 +268,8 @@ void dataReceive(){
   }while(menuFlag);
 }
 
-void saveData(int ARRAY[] ,int SIZE){
-  for(int i = 0; i < SIZE; i++){
-    EEPROM.writeInt(4*i, ARRAY[i]);
-  } 
+void saveData(int target ,int address){ 
+  EEPROM.writeInt(4*address, target);
   EEPROM.commit();
   Serial.println("intData write in EEPROM is Successful");
 }
@@ -203,11 +285,12 @@ void readData(int ARRAY[] ,int SIZE){
   } 
 }
 
-void clearData(int ARRAY[]){
-  for(int i = 0; i < EEPROM.length(); i++){
-    EEPROM.write(i, 0);
-  } 
-  EEPROM.end();
+void clearData(int _position){
+  for(int i = _position; i < EEPROM.length(); i++){
+    EEPROM.write(4*i, 0);
+  }
+  EEPROM.commit();
+  //EEPROM.end();
   Serial.println("EEPROM Clear Done!");
 }
 
@@ -227,6 +310,18 @@ void printArray(int ARRAY[] ,int SIZE){
   }  
 }
 
+void detectDistance(){
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+  duration = pulseIn(ECHO, HIGH);
+  distance = 340.0 * duration / 10000.0 / 2.0;
+  sonarDistance = (int)distance;
+  sonarDistance = constrain(sonarDistance, 0, 500);
+}
+
 void setMenuButton(){
   u8g2.setFontDirection(0);
   u8g2.clearBuffer();
@@ -244,8 +339,8 @@ void setRightButton(){
   u8g2.clearBuffer();
   u8g2.setCursor(20, 16);
   u8g2.print("1.오른쪽");
-  u8g2.setCursor(40, 40);
-  u8g2.print("▶버튼을");
+  u8g2.setCursor(20, 40);
+  u8g2.print("오른쪽버튼을");
   u8g2.setCursor(30, 56);
   u8g2.print("누르세요");
   u8g2.sendBuffer();
@@ -256,8 +351,8 @@ void setLeftButton(){
   u8g2.clearBuffer();
   u8g2.setCursor(20, 16);
   u8g2.print("2.왼쪽방향키");
-  u8g2.setCursor(40, 40);
-  u8g2.print("◀버튼을");
+  u8g2.setCursor(20, 40);
+  u8g2.print("왼쪽버튼을");
   u8g2.setCursor(30, 56);
   u8g2.print("누르세요");
   u8g2.sendBuffer();
@@ -268,8 +363,8 @@ void setDownButton(){
   u8g2.clearBuffer();
   u8g2.setCursor(20, 16);
   u8g2.print("3.아래방향키");
-  u8g2.setCursor(40, 40);
-  u8g2.print("▼버튼을");
+  u8g2.setCursor(20, 40);
+  u8g2.print("아래버튼을");
   u8g2.setCursor(30, 56);
   u8g2.print("누르세요");
   u8g2.sendBuffer();
@@ -290,13 +385,104 @@ void setEnterButton(){
 void setExitButton(){
   u8g2.setFontDirection(0);
   u8g2.clearBuffer();
-  u8g2.setCursor(20, 16);
-  u8g2.print("5.종료");
+  u8g2.setCursor(10, 16);
+  u8g2.print("5.종료(나가기)");
   u8g2.setCursor(40, 40);
   u8g2.print("버튼을");
   u8g2.setCursor(30, 56);
   u8g2.print("누르세요");
   u8g2.sendBuffer();
+}
+
+void setOrder(){
+  if(menuCount == 6){
+    u8g2.setFontDirection(0);
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, 16);
+    u8g2.print("메뉴버튼을 눌러");
+    u8g2.setCursor(10, 40);
+    u8g2.print("밝기메뉴까지");
+    u8g2.setCursor(20, 56);
+    u8g2.print("들어가주세요");
+    u8g2.sendBuffer();
+  }else{
+    u8g2.setFontDirection(0);
+    u8g2.clearBuffer();
+    u8g2.setCursor(20, 16);
+    u8g2.print("버튼을");
+    u8g2.setCursor(40, 40);
+    u8g2.print("다시 눌러");
+    u8g2.setCursor(30, 56);
+    u8g2.print("재설정");
+    u8g2.sendBuffer();
+  }
+}
+
+void arrangeOrder(){
+  u8g2.setFontDirection(0);
+  u8g2.clearBuffer();
+  u8g2.setCursor(0, 16);
+  u8g2.print("방향키버튼을.");
+  u8g2.setCursor(0, 40);
+  u8g2.print("눌러");
+  u8g2.setCursor(0, 56);
+  u8g2.print("순서 나열");
+  u8g2.sendBuffer();
+}
+
+void showDirection(int _direction){
+  if(menuCount > 6){
+    u8g2.setFontDirection(0);
+    u8g2.clearBuffer();
+    u8g2.setCursor(20, 16);
+    switch(_direction){
+      case RIGHT: u8g2.print("오른쪽버튼"); break;
+      case LEFT: u8g2.print("왼쪽버튼"); break;
+      case DOWN: u8g2.print("아래버튼"); break;
+    }
+    
+    u8g2.setCursor(30, 40);
+    u8g2.print("맞으시면");
+    u8g2.setCursor(0, 56);
+    u8g2.print("확인을 눌러주세요");
+    
+    u8g2.sendBuffer();
+  }else{
+    u8g2.setFontDirection(0);
+    u8g2.clearBuffer();
+    u8g2.setCursor(20, 16);
+    u8g2.print("전원을");
+    u8g2.setCursor(20, 40);
+    u8g2.print("다시 연결하여");
+    u8g2.setCursor(30, 56);
+    u8g2.print("재설정");
+    u8g2.sendBuffer();
+  }
+}
+
+void showComfirm(){
+  if((menuCount>6)&&(SAVE_DATA_SIZE>menuCount)){
+      u8g2.setFontDirection(0);
+      u8g2.clearBuffer();
+      u8g2.setCursor(0, 16);
+      u8g2.print("확인이 되었습니다.");
+      u8g2.setCursor(0, 40);
+      u8g2.print("종료(나가기)또는");
+      u8g2.setCursor(10, 56);
+      u8g2.print("다음 버튼클릭");
+      u8g2.sendBuffer();
+  }else{
+    u8g2.setFontDirection(0);
+    u8g2.clearBuffer();
+    u8g2.setCursor(20, 16);
+    u8g2.print("전원을");
+    u8g2.setCursor(20, 40);
+    u8g2.print("다시 연결하여");
+    u8g2.setCursor(30, 56);
+    u8g2.print("재설정");
+    u8g2.sendBuffer();
+  }
+
 }
 
 void endMonitor(){
@@ -324,11 +510,13 @@ void executeCommand(){
   }
 }
 
-void sendData(){
+void sendData(int sCommand){
+    startTimer = true;
+    lastTrigger = millis();
     sAddress = 0x0001;
     sCommand = 0x45;
     sRepeats = 2;
-  
+    
     Serial.println();
     Serial.print(F("Send now: address=0x"));
     Serial.print(sAddress, HEX);
@@ -338,19 +526,21 @@ void sendData(){
     Serial.print(sRepeats);
     Serial.println();
 
-    Serial.println(F("Send NEC with 16 bit address"));
-    Serial.flush();
+    //Serial.println(F("Send NEC with 16 bit address"));
+    //Serial.flush();
 
     // Results for the first loop to: Protocol=NEC Address=0x102 Command=0x34 Raw-Data=0xCB340102 (32 bits)
     IrSender.sendNEC(sAddress, sCommand, sRepeats);
-
+    if (flag = 0){
+      Serial.flush();
+      flag = 1;
+      IrSender.sendNEC(sAddress, sCommand, sRepeats);  
+    }
     /*
      * If you cannot avoid to send a raw value directly like e.g. 0xCB340102 you must use sendNECRaw()
      */
 //    Serial.println(F("Send NECRaw 0xCB340102"));
 //    IrSender.sendNECRaw(0xCB340102, sRepeats);
-
-    delay(1000);
 }
 
 
@@ -362,10 +552,10 @@ void timeInterval(){
         float interval = (float)(now-lastTrigger)/1000;
         snprintf(strTime, TIME_BUFFER_SIZE, "간격 : %.1f 초", interval);
         Serial.println(strTime);
-        flag = 0;
+        flag = 0;   // flag -> 0일 때 작업 가능
         startTimer = false;
         
-        Serial.println("Initializing");
+        Serial.println("Initializing");   // 작업간 간격을 줄 수 있음 
     }
 }
 
