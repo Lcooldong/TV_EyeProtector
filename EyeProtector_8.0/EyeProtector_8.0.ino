@@ -73,7 +73,7 @@ char databuffer[DATA_BUFFER_SIZE];
 
 uint16_t sAddress = 0x0000;
 uint8_t sCommand  = 0x00;
-uint8_t sRepeats  = 0;
+uint8_t sRepeats  = 3;
 
 
 // Storage for the recorded code IR저장구조체
@@ -107,6 +107,7 @@ void setup() {
     BUTTON.firstButton   = EEPROM.readInt(28);
     BUTTON.secondButton  = EEPROM.readInt(32);
     BUTTON.thirdButton   = EEPROM.readInt(36);
+    sCommand = EEPROM.readInt(40);
     
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
@@ -167,18 +168,21 @@ void loop() {
       increaseBright();
     }
 
-//    if (IrReceiver.decode()) {
-//        Serial.println();
-//        IrReceiver.printIRResultShort(&Serial); // 받은 데이터 시리얼에 표시
-//        if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
-//            IrReceiver.printIRResultRawFormatted(&Serial, true);
-//        }
-//        IrReceiver.resume(); // Enable receiving of the next value
-//        printRawData();
-//        executeCommand();
-//    }
-//    
-//    timeInterval();   // 정해진 시간 동안 새로운 입력x, 작업간 간격 측정
+    if (IrReceiver.decode()) {
+        Serial.println();
+        IrReceiver.printIRResultShort(&Serial); // 받은 데이터 시리얼에 표시
+        if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
+            IrReceiver.printIRResultRawFormatted(&Serial, true);
+        }
+        IrReceiver.resume(); // Enable receiving of the next value
+        printRawData();
+        executeCommand();
+    }
+
+    sendData(0x1A);
+    delay(1000);
+    
+    timeInterval();   // 정해진 시간 동안 새로운 입력x, 작업간 간격 측정
 }
 
 void reduceBright(){
@@ -215,6 +219,11 @@ void increaseBright(){
     RGB_ON_OFF(0, 0);
     RGB_ON_OFF(1, 255);
     Serial.println("밝기 증가");
+    
+    if (sRepeats > 3){
+      sRepeats = 3;  
+    }
+    
     for(int i = 0; i< 16; i++){
       IrSender.sendNEC(sAddress, BUTTON.Rdirection, sRepeats);
       Serial.println(BUTTON.Rdirection, HEX);
@@ -283,6 +292,8 @@ void dataReceive(){
       Serial.print(menuCount);
       Serial.print("] : 0x");
       Serial.println(dataArray[menuCount], HEX);
+      sAddress = IrReceiver.decodedIRData.address;
+      EEPROM.writeInt(40, sAddress);
       printRawData();
       dataFlag = 1;
     }else{
@@ -367,7 +378,7 @@ void saveData(int target ,int address){
 
 void readData(int ARRAY[] ,int SIZE){
   int rInt;
-  for(int i = 0; i < SIZE; i++){
+  for(int i = 0; i < SIZE+1; i++){
     rInt = EEPROM.readInt(4*i);
     EEPROM.readInt(rInt);
     snprintf(databuffer, DATA_BUFFER_SIZE ,"[%d] : 0x%x", i, rInt);
@@ -631,22 +642,23 @@ void sendData(int Command){
     lastTrigger = millis();
     Serial.print("작동 시간 : ");
     Serial.println(lastTrigger);
-    sAddress = 0x0001;
-    sRepeats = 2;
+    sAddress = 0x707;
+    sRepeats = 3;
     
     if (flag == 0){  
       flag = 1;
 
-      Serial.print(F("Send now: address=0x"));
-      Serial.print(sAddress, HEX);
-      Serial.print(F(" command=0x"));
-      Serial.print(Command, HEX);
-      Serial.print(F(" repeats="));
-      Serial.print(sRepeats);
-      Serial.println();
+//      Serial.print(F("Send now: address=0x"));
+//      Serial.print(sAddress, HEX);
+//      Serial.print(F(" command=0x"));
+//      Serial.print(Command, HEX);
+//      Serial.print(F(" repeats="));
+//      Serial.print(sRepeats);
+//      Serial.println();
       Serial.flush(); // 전송하고 있는 시리얼 데이터가 전송 완료될때까지 대기하는 함수, 큰 차이는 없음 
+      delay(100);
+      IrSender.sendSamsung(sAddress, Command, sRepeats);
       
-      IrSender.sendNEC(sAddress, Command, sRepeats);
     }
 }
 
