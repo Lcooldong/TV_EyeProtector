@@ -2,18 +2,16 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <EEPROM.h>
-//#include <Adafruit_GFX.h>
-//#include <Adafruit_SSD1306.h>
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-//#include "PinDefinitionsAndMore.h"
 #include <U8g2lib.h>
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
-#define DECODE_NEC 1  // 디코딩 방식
-#define timeSeconds 5 // 초  delay 된 시간 제외
+//#define DECODE_NEC 1  // 디코딩 방식
+#define DECODE_SAMSUNG
+//#define DECODE_LG
+#define timeSeconds 0.1 // 초  delay 된 시간 제외
 #define TIME_BUFFER_SIZE (30)
 #define RAW_BUFFER_SIZE  (11)
 #define SAVE_DATA_SIZE   (10)
@@ -143,10 +141,10 @@ void setup() {
 void loop() {
     buttonClicked();
     detectDistance();
-    Serial.print("detectCount : ");
-    Serial.print(detectCount);
-    Serial.print(" detectFlag : ");
-    Serial.println(detectFlag);
+//    Serial.print("detectCount : ");
+//    Serial.print(detectCount);
+//    Serial.print(" detectFlag : ");
+//    Serial.println(detectFlag);
     if((detectCount >= 0) && (detectCount <= 1000)){
       if(sonarDistance <= 10){
         detectCount++;
@@ -168,23 +166,27 @@ void loop() {
     }else if((detectFlag == 1) && (detectCount <300)){  // 밝기 증가
       increaseBright();
     }
-    
-    //timeInterval();   // 정해진 시간 동안 새로운 입력x, 작업간 간격 측정
+
+//    if (IrReceiver.decode()) {
+//        Serial.println();
+//        IrReceiver.printIRResultShort(&Serial); // 받은 데이터 시리얼에 표시
+//        if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
+//            IrReceiver.printIRResultRawFormatted(&Serial, true);
+//        }
+//        IrReceiver.resume(); // Enable receiving of the next value
+//        printRawData();
+//        executeCommand();
+//    }
+//    
+//    timeInterval();   // 정해진 시간 동안 새로운 입력x, 작업간 간격 측정
 }
 
 void reduceBright(){
-  startTimer = true;
-  lastTrigger = millis();   // 신호가 들어온 시간
-  //Serial.print("작동 시간 : ");
-  Serial.println(lastTrigger);
-  RGB_ON_OFF(0, 255);
+  RGB_ON_OFF(0, 127);
   if(menuOpenFlag == 0){
-    //if(flag == 0){
       Serial.println("밝기 감소");
-      //flag = 1;           //flag = 1 일 때는 추가 신호 안받음
       menuOpenFlag = 1;
       Serial.flush();
-      Serial.println("move backWard");
       IrSender.sendNEC(sAddress, BUTTON.menuButton, sRepeats);  // 메뉴
       Serial.println(BUTTON.menuButton, HEX);
       delay(500);
@@ -197,14 +199,14 @@ void reduceBright(){
       IrSender.sendNEC(sAddress, BUTTON.thirdButton, sRepeats); // 순서 3
       Serial.println(BUTTON.thirdButton, HEX);
       delay(500);
-      //IrSender.sendNEC(sAddress, EEPROM.readInt(20), sRepeats);
-
+      
       for(int i = 0; i< 16; i++){
         IrSender.sendNEC(sAddress, BUTTON.Ldirection, sRepeats);
         Serial.println(BUTTON.Ldirection, HEX);
         delay(100);
       }
-    //}
+      
+      Serial.println("move backWard");
   }
 }
 
@@ -250,7 +252,6 @@ void buttonClicked(){
           
           Serial.println("저장 완료");
           delay(1000);
-          //printArray(dataArray, SAVE_DATA_SIZE);
           readData(dataArray, SAVE_DATA_SIZE);
           endMonitor();
           ESP.restart();
@@ -278,14 +279,11 @@ void dataReceive(){
       }
       IrReceiver.resume(); // Enable receiving of the next value
       dataArray[menuCount] = IrReceiver.decodedIRData.command;
-      //saveData(dataArray[menuCount], menuCount);
       Serial.print("dataArray[");
       Serial.print(menuCount);
       Serial.print("] : 0x");
       Serial.println(dataArray[menuCount], HEX);
-      //sendData();
       printRawData();
-      //executeCommand();
       dataFlag = 1;
     }else{
       dataFlag = 0;
@@ -310,7 +308,7 @@ void dataReceive(){
             pressEnter();
             Serial.println("확인버튼 다시 누름");
             saveData(dataArray[menuCount], menuCount);
-            delay(1000);
+            delay(2000);
             menuCount++;
             
         }else if((dataArray[menuCount-1] == EEPROM.readInt(0))&&(tempData==0)){
@@ -318,8 +316,6 @@ void dataReceive(){
             Serial.println("잘못누름");
         }else{
           saveData(tempData, menuCount);
-          //EEPROM.writeInt(4*menuCount, tempData);
-          //EEPROM.commit();
           showComfirm();
           menuCount++;  // 확인 버튼 누르면 +1
           delay(1000);
@@ -371,7 +367,6 @@ void saveData(int target ,int address){
 
 void readData(int ARRAY[] ,int SIZE){
   int rInt;
-  //String rString = EEPROM.readString();
   for(int i = 0; i < SIZE; i++){
     rInt = EEPROM.readInt(4*i);
     EEPROM.readInt(rInt);
@@ -432,8 +427,8 @@ void setMenuButton(){
 void setRightButton(){
   u8g2.setFontDirection(0);
   u8g2.clearBuffer();
-  u8g2.setCursor(20, 16);
-  u8g2.print("1.오른쪽");
+  u8g2.setCursor(10, 16);
+  u8g2.print("1.오른쪽방향키");
   u8g2.setCursor(20, 40);
   u8g2.print("오른쪽버튼을");
   u8g2.setCursor(30, 56);
@@ -516,7 +511,7 @@ void setOrder(){
 void arrangeOrder(){
   u8g2.setFontDirection(0);
   u8g2.clearBuffer();
-  u8g2.setCursor(20, 16);
+  u8g2.setCursor(15, 16);
   u8g2.print("방향키버튼을");
   u8g2.setCursor(10, 40);
   u8g2.print("눌러서 순서를");
@@ -613,7 +608,7 @@ void endMonitor(){
   u8g2.print("세팅이");
   u8g2.setCursor(10, 40);
   u8g2.print("완료되었습니다.");
-  u8g2.setCursor(30, 56);
+  u8g2.setCursor(20, 56);
   u8g2.print("감사합니다.");
   u8g2.sendBuffer();
   delay(5000);
@@ -624,10 +619,10 @@ void endMonitor(){
 void executeCommand(){
   uint8_t myCommand = IrReceiver.decodedIRData.command;
   switch(myCommand){
-    case 0x45: LED_ON_OFF(); break;
-    case 0x44: RGB_ON_OFF(0, 255); break;
-    case 0x40: RGB_ON_OFF(1, 255); break;
-    case 0x43: RGB_ON_OFF(2, 127); break;
+    case 0x46: LED_ON_OFF(); break;
+    //case 0x44: RGB_ON_OFF(0, 255); break;
+    //case 0x40: RGB_ON_OFF(1, 255); break;
+    //case 0x43: RGB_ON_OFF(2, 127); break;
   }
 }
 
@@ -637,17 +632,11 @@ void sendData(int Command){
     Serial.print("작동 시간 : ");
     Serial.println(lastTrigger);
     sAddress = 0x0001;
-    //sCommand = 0x45;
     sRepeats = 2;
     
-    //Serial.println(F("Send NEC with 16 bit address"));
-    //Serial.flush();
-
-    // Results for the first loop to: Protocol=NEC Address=0x102 Command=0x34 Raw-Data=0xCB340102 (32 bits)
-    //IrSender.sendNEC(sAddress, sCommand, sRepeats);
     if (flag == 0){  
       flag = 1;
-    //Serial.println();
+
       Serial.print(F("Send now: address=0x"));
       Serial.print(sAddress, HEX);
       Serial.print(F(" command=0x"));
@@ -659,11 +648,6 @@ void sendData(int Command){
       
       IrSender.sendNEC(sAddress, Command, sRepeats);
     }
-    /*
-     * If you cannot avoid to send a raw value directly like e.g. 0xCB340102 you must use sendNECRaw()
-     */
-//    Serial.println(F("Send NECRaw 0xCB340102"));
-//    IrSender.sendNECRaw(0xCB340102, sRepeats);
 }
 
 
@@ -712,18 +696,5 @@ void LED_ON_OFF(){
 }
 
 void RGB_ON_OFF(int color, int brightness){
-    //startTimer = true;
-    //lastTrigger = millis();   // 신호가 들어온 시간
-    //Serial.print("작동 시간 : ");
-    //Serial.println(lastTrigger);
-    //if(flag == 0){
-    //  flag = 1;           //flag = 1 일 때는 추가 신호 안받음
-    //  colorState[color] = !colorState[color];
-      //delay(100);
-      //Serial.print("state : ");
-      //Serial.println(colorState[color]);
-      //ledcWrite(color, brightness*colorState[color]);
       ledcWrite(color, brightness);
-      //Serial.println("LED state Changed");
-  //}
 }
