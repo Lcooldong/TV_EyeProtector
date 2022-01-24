@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <IRremote.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -658,6 +659,8 @@ void sendData(int Command){
       Serial.flush(); // 전송하고 있는 시리얼 데이터가 전송 완료될때까지 대기하는 함수, 큰 차이는 없음 
       delay(100);
       IrSender.sendSamsung(sAddress, Command, sRepeats);
+      //IrSender.sendRaw(, sizeof()/sizeof([0]), ); // 배열, 배열 원소 한개 크기, HZ
+      
       
     }
 }
